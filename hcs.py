@@ -33,8 +33,6 @@ class Schoolfinder:
                 return
             except:
                 count += 1
-        else:
-            return
 
     def update_db(self):
         requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
