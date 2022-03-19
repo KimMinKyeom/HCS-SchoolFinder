@@ -10,11 +10,11 @@
 
 ## 사용
 ```
-import hcs
+import asyncio, hcs
 
-sf = Schoolfinder('이름', '생년월일')
-sf.update_db() # 전국 학교 데이터 수집
+sf = hcs.Schoolfinder('이름', '생년월일')
+sf.update_db()  # 전국 학교 데이터 수집
 loop = asyncio.get_event_loop()
-print(loop.run_until_complete(sf.find())) # 학교 검색
+print(loop.run_until_complete(sf.find()))  # 학교 검색
 loop.close()
 ```
