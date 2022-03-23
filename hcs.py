@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+import random
+
 import requests, json, asyncio, aiohttp
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_v1_5 as Cipher_PKCS1_v1_5
@@ -16,6 +18,8 @@ class Schoolfinder:
         self.proxy = proxy
         with open('./school.json', 'r') as f:
             self.school_code = json.loads(f.read())
+        with open('./useragent.txt', 'r') as f:
+            self.useragent = f.read().split("\n")
 
     def _encryption(self, msg):
         key_pub = RSA.import_key(bytes.fromhex(self.key))
@@ -25,14 +29,17 @@ class Schoolfinder:
 
     async def _find_user(self, school_code, session):
         school_info = self.school_code[school_code]
+        useragent = random.choice(self.useragent)
         sido = self.sido_code[school_info["sido"]]
         count = 0
         while count <= 3:
             try:
-                async with session.get(f"https://hcs.eduro.go.kr/v2/searchSchool?lctnScCode={self.province[school_info['sido']]}&schulCrseScCode={self.school_level[school_info['level']]}&orgName={school_info['school_name']}&loginType=school") as resp:
+                async with session.get('https://hcs.eduro.go.kr/', headers={"User-Agent": useragent}) as resp:
+                    cookie = str(resp.cookies).split("=")[1].split(";")[0]
+                async with session.get(f"https://hcs.eduro.go.kr/v2/searchSchool?lctnScCode={self.province[school_info['sido']]}&schulCrseScCode={self.school_level[school_info['level']]}&orgName={school_info['school_name']}&loginType=school", headers={"User-Agent": useragent, "Cookie": "WAF=" + cookie}) as resp:
                     key = (await resp.json())['key']
                 payload = {"orgCode": school_code, "name": self.name, "birthday": self.birthday, "stdntPNo": None, "loginType": "school", "searchKey": key}
-                async with session.post(f'https://{sido}hcs.eduro.go.kr/v2/findUser', json=payload) as resp:
+                async with session.post(f'https://{sido}hcs.eduro.go.kr/v2/findUser', json=payload, headers={"User-Agent": useragent, "Cookie": "WAF=" + cookie}) as resp:
                     if resp.status == 200:
                         return school_info['school_name']
                 return
@@ -54,18 +61,13 @@ class Schoolfinder:
             json.dump(school_code, f, ensure_ascii=False, indent=4)
 
     async def find(self):
-        if self.proxy:
-            from aiohttp_proxy import ProxyConnector
-            async with aiohttp.ClientSession(connector=ProxyConnector.from_url(self.proxy)) as session:
-                result = await asyncio.gather(*[self._find_user(code, session) for code in self.school_code])
-        else:
-            async with aiohttp.ClientSession() as session:
-                result = await asyncio.gather(*[self._find_user(code, session) for code in self.school_code])
+        async with aiohttp.ClientSession() as session:
+            result = await asyncio.gather(*[self._find_user(code, session) for code in self.school_code])
         while None in result:
             result.remove(None)
         return result
 
-
+    
 if __name__ == "__main__":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     sf = Schoolfinder('이름', '생년월일', '')
