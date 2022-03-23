@@ -70,6 +70,6 @@ class Schoolfinder:
     
 if __name__ == "__main__":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    sf = Schoolfinder('이름', '생년월일', '')
+    sf = Schoolfinder('이름', '생년월일')
     # sf.update_db()
     print(asyncio.get_event_loop().run_until_complete(sf.find()))
