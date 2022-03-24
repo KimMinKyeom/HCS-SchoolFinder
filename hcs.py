@@ -1,6 +1,4 @@
 # -*- coding: utf-8 -*-
-import random
-
 import requests, json, asyncio, aiohttp
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_v1_5 as Cipher_PKCS1_v1_5
@@ -8,18 +6,15 @@ from base64 import b64encode
 
 
 class Schoolfinder:
-    def __init__(self, name, birthday, proxy=None):
+    def __init__(self, name, birthday):
         self.key = '30820122300d06092a864886f70d01010105000382010f003082010a0282010100f357429c22add0d547ee3e4e876f921a0114d1aaa2e6eeac6177a6a2e2565ce9593b78ea0ec1d8335a9f12356f08e99ea0c3455d849774d85f954ee68d63fc8d6526918210f28dc51aa333b0c4cdc6bf9b029d1c50b5aef5e626c9c8c9c16231c41eef530be91143627205bbbf99c2c261791d2df71e69fbc83cdc7e37c1b3df4ae71244a691c6d2a73eab7617c713e9c193484459f45adc6dd0cba1d54f1abef5b2c34dee43fc0c067ce1c140bc4f81b935c94b116cce404c5b438a0395906ff0133f5b1c6e3b2bb423c6c350376eb4939f44461164195acc51ef44a34d4100f6a837e3473e3ce2e16cedbe67ca48da301f64fc4240b878c9cc6b3d30c316b50203010001'
         self.sido_code = {"서울특별시": "sen", "부산광역시": "pen", "대구광역시": "dge", "인천광역시": "ice", "광주광역시": "gen", "대전광역시": "dje", "울산광역시": "use", "세종특별자치시": "sje", "경기도": "goe", "강원도": "kwe", "충청북도": "cbe", "충청남도": "cne", "전라북도": "jbe", "전라남도": "jne", "경상북도": "gbe", "경상남도": "gne", "제주특별자치도": "jje"}
         self.province = {'서울특별시': "01", '부산광역시': "02", '대구광역시': "03", '인천광역시': "04", '광주광역시': "05", '대전광역시': "06", '울산광역시': "07", '세종특별자치시': "08", '경기도': "10", '강원도': "11", '충청북도': "12", '충청남도': "13", '전라북도': "14", '전라남도': "15", '경상북도': "16", '경상남도': "17", '제주특별자치도': "18"}
         self.school_level = {"초등학교": 2, "중학교": 3, "고등학교": 4, "특수학교/각종학교/기타": 5}
-        self.name = self._encryption(name)
-        self.birthday = self._encryption(birthday)
-        self.proxy = proxy
+        self.name = (name, self._encryption(name))
+        self.birthday = (birthday, self._encryption(birthday))
         with open('./school.json', 'r') as f:
             self.school_code = json.loads(f.read())
-        with open('./useragent.txt', 'r') as f:
-            self.useragent = f.read().split("\n")
 
     def _encryption(self, msg):
         key_pub = RSA.import_key(bytes.fromhex(self.key))
@@ -29,21 +24,23 @@ class Schoolfinder:
 
     async def _find_user(self, school_code, session):
         school_info = self.school_code[school_code]
-        useragent = random.choice(self.useragent)
         sido = self.sido_code[school_info["sido"]]
         count = 0
         while count <= 3:
             try:
-                async with session.get('https://hcs.eduro.go.kr/', headers={"User-Agent": useragent}) as resp:
-                    cookie = str(resp.cookies).split("=")[1].split(";")[0]
-                async with session.get(f"https://hcs.eduro.go.kr/v2/searchSchool?lctnScCode={self.province[school_info['sido']]}&schulCrseScCode={self.school_level[school_info['level']]}&orgName={school_info['school_name']}&loginType=school", headers={"User-Agent": useragent, "Cookie": "WAF=" + cookie}) as resp:
-                    key = (await resp.json())['key']
-                payload = {"orgCode": school_code, "name": self.name, "birthday": self.birthday, "stdntPNo": None, "loginType": "school", "searchKey": key}
-                async with session.post(f'https://{sido}hcs.eduro.go.kr/v2/findUser', json=payload, headers={"User-Agent": useragent, "Cookie": "WAF=" + cookie}) as resp:
+                async with session.get(f"https://hcs.eduro.go.kr/v2/searchSchool?lctnScCode={self.province[school_info['sido']]}&schulCrseScCode={self.school_level[school_info['level']]}&orgName={school_info['school_name']}&loginType=school") as resp:
+                    resp=await resp.json()
+                    if not resp['schulList']:
+                        return
+                    key = resp['key']
+                payload = {"orgCode": school_code, "name": self.name[1], "birthday": self.birthday[1], "stdntPNo": None, "loginType": "school", "searchKey": key}
+                async with session.post(f'https://{sido}hcs.eduro.go.kr/v2/findUser', json=payload) as resp:
                     if resp.status == 200:
                         return school_info['school_name']
                 return
-            except:
+            except aiohttp.client_exceptions.ServerDisconnectedError:
+                count += 1
+            except IndexError:
                 count += 1
 
     def update_db(self):
@@ -61,8 +58,23 @@ class Schoolfinder:
             json.dump(school_code, f, ensure_ascii=False, indent=4)
 
     async def find(self):
+        if not (self.birthday[0].isdigit() and len(self.birthday[0]) == 6):
+            return False
+        birthyear = int(self.birthday[0][:2])
+        if birthyear <= 5:
+            school_level = ['고등학교']
+        elif 6 <= birthyear <= 7:
+            school_level = ['고등학교', "중학교"]
+        elif birthyear == 8:
+            school_level = ['중학교']
+        elif 9 <= birthyear <= 10:
+            school_level = ['초등학교', '중학교']
+        elif birthyear >= 11:
+            school_level = ['초등학교']
+        else:
+            return False
         async with aiohttp.ClientSession() as session:
-            result = await asyncio.gather(*[self._find_user(code, session) for code in self.school_code])
+            result = await asyncio.gather(*[self._find_user(code, session) for code in self.school_code if self.school_code[code]["level"] in school_level + ["특수학교/각종학교/기타"]])
         while None in result:
             result.remove(None)
         return result
